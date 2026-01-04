@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>LRU Cache Visualization</title>
+
+<style>
+    body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Segoe UI", sans-serif;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .app {
+        background: rgba(255,255,255,0.15);
+        backdrop-filter: blur(15px);
+        padding: 30px;
+        border-radius: 20px;
+        width: 900px;
+        color: white;
+        box-shadow: 0 25px 50px rgba(0,0,0,0.3);
+        animation: fadeIn 1s ease;
+    }
+
+    h1 {
+        margin-top: 0;
+        text-align: center;
+        letter-spacing: 1px;
+    }
+
+    .setup, .controls {
+        text-align: center;
+        margin: 20px 0;
+    }
+
+    input {
+        padding: 10px;
+        width: 120px;
+        border-radius: 8px;
+        border: none;
+        outline: none;
+        margin: 5px;
+        font-size: 15px;
+    }
+
+    button {
+        padding: 10px 18px;
+        border-radius: 10px;
+        border: none;
+        cursor: pointer;
+        font-weight: bold;
+        background: linear-gradient(135deg, #22c55e, #16a34a);
+        color: #022c22;
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+    }
+
+    .cache-area {
+        margin-top: 25px;
+    }
+
+    .labels {
+        display: flex;
+        justify-content: space-between;
+        font-weight: bold;
+        padding: 0 20px;
+        margin-bottom: 10px;
+        opacity: 0.9;
+    }
+
+    .cache {
+        display: flex;
+        gap: 15px;
+        justify-content: center;
+        min-height: 90px;
+    }
+
+    .node {
+        width: 110px;
+        height: 75px;
+        background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+        border-radius: 15px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        font-weight: bold;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        animation: slideIn 0.4s ease;
+        transition: transform 0.3s;
+    }
+
+    .node.hit {
+        background: linear-gradient(135deg, #34d399, #059669);
+        transform: scale(1.08);
+    }
+
+    .node.evicted {
+        background: linear-gradient(135deg, #f87171, #dc2626);
+        animation: evict 0.6s forwards;
+    }
+
+    .log {
+        background: rgba(0,0,0,0.3);
+        margin-top: 25px;
+        padding: 15px;
+        height: 140px;
+        overflow-y: auto;
+        border-radius: 12px;
+        font-size: 14px;
+    }
+
+    @keyframes slideIn {
+        from { transform: translateY(-20px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+    }
+
+    @keyframes evict {
+        to { transform: scale(0); opacity: 0; }
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+</style>
+</head>
+
+<body>
+
+<div class="app">
+    <h1>✨ LRU Cache Visualization</h1>
+    <p style="text-align:center;opacity:0.9">
+        Doubly Linked List + HashMap
+    </p>
+
+    <div class="setup">
+        <input type="number" id="capacity" placeholder="Capacity">
+        <button onclick="createCache()">Create Cache</button>
+    </div>
+
+    <div class="controls" id="controls" style="display:none">
+        <input type="number" id="key" placeholder="Key">
+        <input type="number" id="value" placeholder="Value">
+        <button onclick="put()">PUT</button>
+        <button onclick="get()">GET</button>
+    </div>
+
+    <div class="cache-area">
+        <div class="labels">
+            <span>🟢 MRU (Head)</span>
+            <span>🔴 LRU (Tail)</span>
+        </div>
+        <div class="cache" id="cache"></div>
+    </div>
+
+    <div class="log" id="log"></div>
+</div>
+
+<script>
+class Node {
+    constructor(key, value) {
+        this.key = key;
+        this.value = value;
+        this.prev = null;
+        this.next = null;
+    }
+}
+
+class LRUCache {
+    constructor(capacity) {
+        this.capacity = capacity;
+        this.map = new Map();
+
+        this.head = new Node(-1, -1);
+        this.tail = new Node(-1, -1);
+        this.head.next = this.tail;
+        this.tail.prev = this.head;
+    }
+
+    get(key) {
+        if (!this.map.has(key)) {
+            log(`❌ GET ${key} → MISS`);
+            return -1;
+        }
+        let node = this.map.get(key);
+        this.delete(node);
+        this.insert(node);
+        log(`✅ GET ${key} → HIT (Moved to MRU)`);
+        render(node);
+        return node.value;
+    }
+
+    put(key, value) {
+        if (this.map.has(key)) {
+            let node = this.map.get(key);
+            node.value = value;
+            this.delete(node);
+            this.insert(node);
+            log(`♻ PUT ${key} → Updated`);
+        } else {
+            if (this.map.size >= this.capacity) {
+                let lru = this.tail.prev;
+                this.map.delete(lru.key);
+                this.delete(lru);
+                log(`🔥 Evicted LRU: ${lru.key}`);
+            }
+            let node = new Node(key, value);
+            this.insert(node);
+            this.map.set(key, node);
+            log(`➕ PUT ${key} → Inserted`);
+        }
+        render();
+    }
+
+    insert(node) {
+        let after = this.head.next;
+        node.next = after;
+        node.prev = this.head;
+        after.prev = node;
+        this.head.next = node;
+    }
+
+    delete(node) {
+        let before = node.prev;
+        let after = node.next;
+        before.next = after;
+        after.prev = before;
+        node.next = node.prev = null;
+    }
+}
+
+let cache;
+
+function createCache() {
+    const cap = Number(document.getElementById("capacity").value);
+    if (!cap || cap <= 0) return alert("Enter valid capacity");
+    cache = new LRUCache(cap);
+    document.getElementById("controls").style.display = "block";
+    log(`🚀 Cache created with capacity ${cap}`);
+    render();
+}
+
+function put() {
+    const k = Number(key.value);
+    const v = Number(value.value);
+    if (isNaN(k) || isNaN(v)) return;
+    cache.put(k, v);
+}
+
+function get() {
+    const k = Number(key.value);
+    if (isNaN(k)) return;
+    cache.get(k);
+}
+
+function render(highlightNode = null) {
+    const container = document.getElementById("cache");
+    container.innerHTML = "";
+
+    let curr = cache.head.next;
+    while (curr !== cache.tail) {
+        const div = document.createElement("div");
+        div.className = "node";
+        if (curr === highlightNode) div.classList.add("hit");
+        div.innerHTML = `Key ${curr.key}<br>Val ${curr.value}`;
+        container.appendChild(div);
+        curr = curr.next;
+    }
+}
+
+function log(msg) {
+    const box = document.getElementById("log");
+    box.innerHTML += msg + "<br>";
+    box.scrollTop = box.scrollHeight;
+}
+</script>
+
+</body>
+</html>
